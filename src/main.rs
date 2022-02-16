@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let block = args.up_to_block;
     let para_id: u32 = args.para_id;
     let enough_events = args.enough_events;
-    let events = subscan::fetch(network, block, para_id, enough_events).await?;
+    let events = subscan::fetch(network, block, enough_events).await?;
 
     let mut last_backed = None;
     let mut last_included = None;
@@ -73,6 +73,10 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all("out")?;
 
     for (data, name) in [(backing_times, "backing"), (inclusion_times, "inclusion")] {
+        if data.is_empty() {
+            eprintln!("No {name} events found for {para_id}");
+            continue;
+        }
         let csv_file = format!("out/{block}-{name}-{para_id}.csv");
         let mut wrt = csv::Writer::from_path(&csv_file)?;
         for p in data.iter().copied() {
@@ -115,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
             }))?;
 
         root.present().unwrap();
-        eprintln!("The plot has been saved to {out_file_name}");
+        eprintln!("The {name} plot has been saved to {out_file_name}");
     }
 
     Ok(())

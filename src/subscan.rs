@@ -71,12 +71,11 @@ impl TryFrom<events::Event> for Event {
 pub async fn fetch(
     network: &str,
     up_to_block: u32,
-    para_id: u32,
     enough_events: usize,
 ) -> anyhow::Result<Vec<Event>> {
     let url = format!("https://{network}.api.subscan.io/api/scan/events");
     let mut events: Vec<Event> = Vec::new();
-    eprintln!("Fetching events for {network}, para_id={para_id} up to block {up_to_block}");
+    eprintln!("Fetching {enough_events} events for {network} up to block {up_to_block}");
     let pb = ProgressBar::new(enough_events as u64);
     let mut block_num = up_to_block;
     while events.len() < enough_events {
