@@ -21,7 +21,7 @@ struct Args {
     up_to_block: u32,
 
     /// How many events to fetch
-    #[clap(long, default_value_t = 5_000)]
+    #[clap(long, default_value_t = 500)]
     enough_events: usize,
 }
 
@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let block = args.up_to_block;
     let para_id: u32 = args.para_id;
     let enough_events = args.enough_events;
-    let events = subscan::fetch(network, block, enough_events).await?;
+    let events = subscan::fetch(network, block, para_id, enough_events).await?;
 
     let mut last_backed = None;
     let mut last_included = None;
