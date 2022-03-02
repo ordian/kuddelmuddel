@@ -17,7 +17,7 @@ pub mod events {
 
     #[derive(Debug, Deserialize)]
     pub struct Response {
-        pub data: Data,
+        pub data: Option<Data>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -92,8 +92,8 @@ pub async fn fetch(
         let response = res.json::<events::Response>().await?;
         let new_events: Vec<Event> = response
             .data
-            .events
             .into_iter()
+            .flat_map(|d| d.events)
             .flatten()
             .flat_map(|e| Event::try_from(e).ok())
             .filter(|e| e.para_id == para_id)
