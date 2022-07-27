@@ -95,6 +95,7 @@ pub mod extrinsic {
         #[derive(Debug, Deserialize)]
         pub struct Data {
             pub params: Vec<Params>,
+            pub block_hash: String,
         }
 
         #[derive(Debug, Deserialize)]
@@ -262,7 +263,7 @@ pub async fn fetch_disputes_events(
 #[derive(serde::Serialize)]
 pub struct DisputeInitiated {
     pub session_index: SessionIndex,
-    pub block_num: u32,
+    pub block_hash: String,
     pub validator_index: ValidatorIndex,
 }
 
@@ -300,6 +301,7 @@ pub async fn fetch_dispute_initiators(
                 continue;
             }
         };
+        let block_hash = data.block_hash;
         let disputes: Vec<extrinsic::parainherent::DisputeVotes> =
             data.params.remove(0).value.disputes;
 
@@ -310,7 +312,7 @@ pub async fn fetch_dispute_initiators(
                 if vote.kind.contains_key(&invalid) {
                     initiators.push(DisputeInitiated {
                         session_index,
-                        block_num,
+                        block_hash: block_hash.clone(),
                         validator_index: vote.validator_index,
                     });
                 }
