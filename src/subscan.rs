@@ -272,6 +272,7 @@ pub async fn fetch_dispute_initiators(
 ) -> anyhow::Result<Vec<DisputeInitiated>> {
     let url = format!("https://{network}.api.subscan.io/api/scan/extrinsic");
     let mut initiators = Vec::new();
+    let pb = ProgressBar::new(events.len() as u64);
     for event in events {
         let events::disputes::Event {
             block_num,
@@ -291,6 +292,7 @@ pub async fn fetch_dispute_initiators(
             .with_context(|| {
                 format!("unexpected response for parainherent {block_num}-{extrinsic_idx}")
             })?;
+        pb.inc(1);
         let mut data = match response.data {
             Some(data) => data,
             None => {
@@ -315,5 +317,6 @@ pub async fn fetch_dispute_initiators(
             }
         }
     }
+    pb.finish_with_message("Fetching complete!");
     Ok(initiators)
 }
