@@ -1,11 +1,8 @@
-use crate::InclusionEvent;
+use crate::{InclusionEvent, SessionIndex, ValidatorIndex};
 use anyhow::Context;
 use indicatif::ProgressBar;
 use std::str::FromStr as _;
 use tokio::time::{sleep, Duration};
-
-type SessionIndex = u32;
-type ValidatorIndex = u32;
 
 pub mod events {
     use serde::{Deserialize, Serialize};
@@ -263,8 +260,9 @@ pub async fn fetch_disputes_events(
 #[derive(serde::Serialize)]
 pub struct DisputeInitiated {
     pub session_index: SessionIndex,
-    pub block_hash: String,
     pub validator_index: ValidatorIndex,
+    #[serde(skip)]
+    pub block_hash: String,
 }
 
 pub async fn fetch_dispute_initiators(

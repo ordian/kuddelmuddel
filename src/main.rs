@@ -1,6 +1,9 @@
+use ::subxt::sp_runtime::AccountId32;
 use clap::{Parser, Subcommand};
+use std::str::FromStr;
 
 pub mod subscan;
+pub mod subxt;
 
 #[derive(Parser)]
 #[clap(version)]
@@ -54,6 +57,13 @@ enum Commands {
         /// be fetching events, e.g. 13524714
         #[clap(long)]
         up_to_block: u32,
+
+        /// Url for an RPC node to query the historical data.
+        ///
+        /// Example:
+        /// `wss://kusama-rpc.polkadot.io:443` or `http://localhost:9933/`
+        #[clap(long)]
+        rpc_url: String,
     },
 }
 
@@ -65,9 +75,18 @@ pub struct InclusionEvent {
 }
 
 #[derive(serde::Serialize, Clone, Copy)]
-pub struct PlottingPoint {
+pub struct InclusionPlottingPoint {
     pub block_num: u32,
     pub blocks: u32,
+}
+
+type SessionIndex = u32;
+type ValidatorIndex = u32;
+
+#[derive(serde::Serialize)]
+pub struct DisputeInitiator {
+    pub session_index: SessionIndex,
+    pub account_id: AccountId32,
 }
 
 #[tokio::main]
@@ -94,14 +113,14 @@ async fn main() -> anyhow::Result<()> {
                     let block_num = event.block_num;
                     if let Some(b) = last_backed {
                         let blocks = block_num.saturating_sub(b);
-                        inclusion_times.push(PlottingPoint { block_num, blocks });
+                        inclusion_times.push(InclusionPlottingPoint { block_num, blocks });
                     }
                     last_included = Some(block_num);
                 } else {
                     let block_num = event.block_num;
                     if let Some(i) = last_included {
                         let blocks = block_num.saturating_sub(i);
-                        backing_times.push(PlottingPoint { block_num, blocks });
+                        backing_times.push(InclusionPlottingPoint { block_num, blocks });
                     }
                     last_backed = Some(block_num);
                 }
@@ -127,9 +146,23 @@ async fn main() -> anyhow::Result<()> {
             network,
             num_events,
             up_to_block,
+            rpc_url,
         } => {
             let events = subscan::fetch_disputes_events(&network, up_to_block, num_events).await?;
             let initiators = subscan::fetch_dispute_initiators(&network, events).await?;
+            let input = initiators.iter().map(|i| {
+                (
+                    i.session_index.clone(),
+                    FromStr::from_str(&i.block_hash).expect("valid block_hash"),
+                )
+            });
+            let account_map = subxt::historical_account_keys(rpc_url, input).await?;
+
+            let initiators = initiators.into_iter().map(|i| DisputeInitiator {
+                session_index: i.session_index,
+                // TODO: handle missing keys
+                account_id: account_map[&i.session_index][i.validator_index as usize].clone(),
+            });
 
             std::fs::create_dir_all("out")?;
 
