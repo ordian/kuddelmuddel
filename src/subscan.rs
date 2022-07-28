@@ -215,7 +215,7 @@ pub async fn fetch_disputes_events(
     let url = format!("https://{network}.api.subscan.io/api/scan/events");
     let mut disputes_initiated: Vec<events::disputes::Event> = Vec::new();
     let pb = ProgressBar::new(enough_events as u64);
-    let from_block = up_to_block.saturating_sub(400_000); // HACK
+    let from_block = up_to_block.saturating_sub(1_000_000); // HACK
     let range = format!("{from_block}-{up_to_block}");
     let mut page = 0;
     while disputes_initiated.len() < enough_events {
@@ -252,7 +252,7 @@ pub async fn fetch_disputes_events(
 
     let duplicates = num_events.saturating_sub(disputes_initiated.len());
     if duplicates != 0 {
-        eprintln!("Found {duplicates} DisputeInitiated events");
+        eprintln!("Found {duplicates} duplicate DisputeInitiated events");
     }
 
     Ok(disputes_initiated)
