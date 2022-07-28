@@ -250,11 +250,6 @@ pub async fn fetch_disputes_events(
     disputes_initiated.sort();
     disputes_initiated.dedup();
 
-    let duplicates = num_events.saturating_sub(disputes_initiated.len());
-    if duplicates != 0 {
-        eprintln!("Found {duplicates} duplicate DisputeInitiated events");
-    }
-
     Ok(disputes_initiated)
 }
 
