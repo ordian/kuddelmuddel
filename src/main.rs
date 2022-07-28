@@ -41,8 +41,9 @@ enum Commands {
     /// Fetches the dispute invalid votes and writes out a csv file to `./out/`.
     ///
     /// Example:
-    /// ```
-    /// cargo run -- disputes --network kusama --from-block 11324714 --num-events 200
+    /// ```bash
+    /// cargo run -- disputes --network kusama --from-block 11324714 --num-events 200 \
+    ///  --rpc-url "wss://kusama-rpc.polkadot.io:443"
     /// ```
     Disputes {
         /// Name of the network, e.g. "kusama"
