@@ -244,15 +244,16 @@ pub async fn fetch_disputes_events(
         // don't trigger rate limiting
         sleep(Duration::from_millis(150)).await;
     }
-    pb.finish_with_message("Fetching complete!");
+    let num_events = disputes_initiated.len();
+    pb.finish_with_message(format!("Fetched {num_events} events."));
 
     disputes_initiated.sort();
     disputes_initiated.dedup();
 
-    eprintln!(
-        "Fetched {} DisputeInitiated unique events",
-        disputes_initiated.len()
-    );
+    let duplicates = num_events.saturating_sub(disputes_initiated.len());
+    if duplicates != 0 {
+        eprintln!("Found {duplicates} DisputeInitiated events");
+    }
 
     Ok(disputes_initiated)
 }
@@ -302,6 +303,10 @@ pub async fn fetch_dispute_initiators(
         let block_hash = data.block_hash;
         let disputes: Vec<extrinsic::parainherent::DisputeVotes> =
             data.params.remove(0).value.disputes;
+
+        if disputes.is_empty() {
+            eprintln!("got 0 disputes for extrinsic {block_num}-{extrinsic_idx}",);
+        }
 
         for votes in disputes {
             let session_index = votes.session;
