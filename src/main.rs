@@ -79,7 +79,7 @@ enum Commands {
     ///
     /// Example:
     /// ```bash
-    /// cargo run -- validate-candidate --network kusama \
+    /// cargo run --release -- validate-candidate --network kusama \
     ///  --candidate-hash "0x03134f027883df8db3ce71602412d906024c96eaef06cda403c48cfb6661e5a8" \
     ///  --rpc-url "wss://kusama-rpc.polkadot.io:443"
     /// ```
