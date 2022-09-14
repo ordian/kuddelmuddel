@@ -1,9 +1,14 @@
-use ::subxt::sp_runtime::AccountId32;
+use crate::primitives::{AccountId32, SessionIndex, H256};
+
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 use std::str::FromStr;
 
-pub mod subscan;
-pub mod subxt;
+mod candidate_validation;
+mod povs_today;
+mod primitives;
+mod subscan;
+mod subxt;
 
 #[derive(Parser)]
 #[clap(version)]
@@ -17,20 +22,20 @@ enum Commands {
     /// Fetches the backing and inclusion events and writes out csv files to `./out/`.
     ///
     /// Example:
-    /// ```
+    /// ```bash
     /// cargo run -- inclusion --network kusama --para-id 2023 --up-to-block 11324714
     /// ```
     Inclusion {
-        /// Name of the network, e.g. "kusama"
+        /// Name of the network, e.g. "kusama".
         #[clap(long, default_value = "kusama")]
         network: String,
 
-        /// Parachain ID to be processed
+        /// Parachain ID to be processed.
         #[clap(long)]
         para_id: u32,
 
         /// The block number up to which we should
-        /// be fetching events, e.g. 13524714
+        /// be fetching events, e.g. 13524714.
         #[clap(long)]
         up_to_block: u32,
 
@@ -46,16 +51,16 @@ enum Commands {
     ///  --rpc-url "wss://kusama-rpc.polkadot.io:443"
     /// ```
     Disputes {
-        /// Name of the network, e.g. "kusama"
+        /// Name of the network, e.g. "kusama".
         #[clap(long, default_value = "kusama")]
         network: String,
 
-        /// How many events to fetch
+        /// How many events to fetch.
         #[clap(long, default_value_t = 100)]
         num_events: usize,
 
         /// The block number up to which we should
-        /// be fetching events, e.g. 13524714
+        /// be fetching events, e.g. 13524714.
         #[clap(long)]
         up_to_block: u32,
 
@@ -66,6 +71,49 @@ enum Commands {
         #[clap(long)]
         rpc_url: String,
     },
+    /// Given the candidate hash, fetch candidate's available data
+    /// and receipt from `povs.today` and the corresponding validation code
+    /// from the runtime, compile validation code and validate the candidate.
+    ///
+    /// All the data will be cached in the `--cache` folder.
+    ///
+    /// Example:
+    /// ```bash
+    /// cargo run -- validate-candidate --network kusama \
+    ///  --candidate-hash "0x03134f027883df8db3ce71602412d906024c96eaef06cda403c48cfb6661e5a8" \
+    ///  --rpc-url "wss://kusama-rpc.polkadot.io:443"
+    /// ```
+    ValidateCandidate {
+        /// Name of the network, e.g. "kusama".
+        #[clap(long, default_value = "kusama")]
+        network: String,
+
+        /// Url for an RPC node to query the runtime.
+        ///
+        /// Example:
+        /// `wss://kusama-rpc.polkadot.io:443` or `http://localhost:9933/`
+        #[clap(long)]
+        rpc_url: String,
+
+        /// Hash of the candidate.
+        #[clap(long)]
+        candidate_hash: H256,
+
+        /// Cache folder storing candidate receipts, available data, validation code.
+        ///
+        /// Default: `./.cache`.
+        #[clap(long)]
+        cache: Option<PathBuf>,
+    },
+
+    // These are needed for candidate validation:
+    #[allow(missing_docs)]
+    #[clap(name = "prepare-worker", hide = true)]
+    PvfPrepareWorker { socket_path: String },
+
+    #[allow(missing_docs)]
+    #[clap(name = "execute-worker", hide = true)]
+    PvfExecuteWorker { socket_path: String },
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -80,9 +128,6 @@ pub struct InclusionPlottingPoint {
     pub block_num: u32,
     pub blocks: u32,
 }
-
-type SessionIndex = u32;
-type ValidatorIndex = u32;
 
 #[derive(serde::Serialize)]
 pub struct DisputeInitiator {
@@ -174,6 +219,45 @@ async fn main() -> anyhow::Result<()> {
             }
             wrt.flush()?;
             eprintln!("Saved the data to {csv_file}");
+        }
+        Commands::ValidateCandidate {
+            network,
+            rpc_url,
+            candidate_hash,
+            cache,
+        } => {
+            let default_cache = PathBuf::from(".cache");
+            let cache = cache.unwrap_or(default_cache);
+            let _ = std::fs::create_dir_all(cache.as_path());
+
+            let povs_path = cache.as_path().join("povs");
+            let _ = std::fs::create_dir_all(&povs_path);
+
+            let pvfs_path = cache.as_path().join("pvfs");
+            let _ = std::fs::create_dir_all(&pvfs_path);
+
+            let (pov, receipt) =
+                povs_today::get_or_fetch_candidate(povs_path, &candidate_hash, &network).await?;
+
+            let code_hash = receipt.descriptor.validation_code_hash;
+            let relay_parent = receipt.descriptor.relay_parent;
+
+            let pvf = subxt::validation_code_by_hash(
+                pvfs_path.as_path(),
+                rpc_url,
+                code_hash,
+                relay_parent,
+            )
+            .await?;
+
+            let path = pvfs_path.as_path().join("compiled");
+            candidate_validation::validate_candidate(path, pov, pvf).await?;
+        }
+        Commands::PvfPrepareWorker { socket_path } => {
+            polkadot_node_core_pvf::prepare_worker_entrypoint(&socket_path);
+        }
+        Commands::PvfExecuteWorker { socket_path } => {
+            polkadot_node_core_pvf::execute_worker_entrypoint(&socket_path);
         }
     }
 

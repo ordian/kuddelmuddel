@@ -1,4 +1,5 @@
-use crate::{InclusionEvent, SessionIndex, ValidatorIndex};
+use crate::primitives::{SessionIndex, ValidatorIndex};
+use crate::InclusionEvent;
 use anyhow::Context;
 use indicatif::ProgressBar;
 use std::str::FromStr as _;
