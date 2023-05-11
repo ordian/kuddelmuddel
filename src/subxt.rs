@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::primitives::{SessionIndex, ValidationCode, ValidationCodeHash};
 use parity_scale_codec::Encode as _;
 use subxt::{
-    sp_core::H256, sp_runtime::AccountId32, ClientBuilder, DefaultConfig, PolkadotExtrinsicParams,
+    utils::H256, utils::AccountId32, OnlineClient, PolkadotConfig,
 };
 
 #[subxt::subxt(runtime_metadata_path = "assets/kusama_metadata.scale")]
@@ -14,26 +14,20 @@ pub async fn historical_account_keys(
     rpc_url: String,
     input: impl IntoIterator<Item = (SessionIndex, H256)>,
 ) -> anyhow::Result<BTreeMap<SessionIndex, Vec<AccountId32>>> {
-    let api = ClientBuilder::new()
-        .set_url(rpc_url)
-        .build()
-        .await?
-        .to_runtime_api::<
-            polkadot::RuntimeApi<
-                DefaultConfig,
-                PolkadotExtrinsicParams<DefaultConfig>,
-            >
-        >();
+    let api = OnlineClient::<PolkadotConfig>::from_url(rpc_url)
+        .await?;
 
     let mut map: BTreeMap<SessionIndex, Vec<AccountId32>> = BTreeMap::new();
 
     for (session, block_hash) in input.into_iter() {
         if let Entry::Vacant(e) = map.entry(session) {
+            let storage_query = polkadot::storage().para_session_info()
+                .account_keys(&session);
             // TODO: handle errors here
             let keys = api
                 .storage()
-                .para_session_info()
-                .account_keys(&session, Some(block_hash))
+                .at(block_hash)
+                .fetch(&storage_query)
                 .await?;
             // TODO: handle None
             if let Some(keys) = keys {
@@ -63,21 +57,16 @@ pub async fn validation_code_by_hash(
 
     println!("Fetching Pvf {validation_code_hash}");
 
-    let api = ClientBuilder::new()
-        .set_url(rpc_url)
-        .build()
-        .await?
-        .to_runtime_api::<
-            polkadot::RuntimeApi<
-                DefaultConfig,
-                PolkadotExtrinsicParams<DefaultConfig>,
-            >
-        >();
+    let api = OnlineClient::<PolkadotConfig>::from_url(rpc_url)
+        .await?;
+
+    let storage_query = polkadot::storage().paras()
+        .code_by_hash(&code_hash);
 
     let code = api
         .storage()
-        .paras()
-        .code_by_hash(&code_hash, Some(relay_parent))
+        .at(relay_parent)
+        .fetch(&storage_query)
         .await?;
 
     // cache the Pvf

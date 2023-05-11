@@ -109,11 +109,22 @@ enum Commands {
     // These are needed for candidate validation:
     #[allow(missing_docs)]
     #[clap(name = "prepare-worker", hide = true)]
-    PvfPrepareWorker { socket_path: String },
+    PvfPrepareWorker(ValidationWorkerCommand),
 
     #[allow(missing_docs)]
     #[clap(name = "execute-worker", hide = true)]
-    PvfExecuteWorker { socket_path: String },
+    PvfExecuteWorker(ValidationWorkerCommand),
+}
+
+#[allow(missing_docs)]
+#[derive(Debug, Parser)]
+pub struct ValidationWorkerCommand {
+    /// The path to the validation host's socket.
+    #[arg(long)]
+    pub socket_path: String,
+    /// Calling node implementation version
+    #[arg(long)]
+    pub node_impl_version: String,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -135,8 +146,121 @@ pub struct DisputeInitiator {
     pub account_id: AccountId32,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn handle_inclusion(
+    network: String,
+    para_id: u32,
+    up_to_block: u32,
+    num_events: usize,
+) -> anyhow::Result<()> {
+    let events =
+        subscan::fetch_inclusion_events(&network, up_to_block, para_id, num_events).await?;
+
+    let mut last_backed = None;
+    let mut last_included = None;
+    let mut backing_times = Vec::new();
+    let mut inclusion_times = Vec::new();
+
+    for event in events.into_iter().filter(|e| e.para_id == para_id) {
+        if event.included {
+            let block_num = event.block_num;
+            if let Some(b) = last_backed {
+                let blocks = block_num.saturating_sub(b);
+                inclusion_times.push(InclusionPlottingPoint { block_num, blocks });
+            }
+            last_included = Some(block_num);
+        } else {
+            let block_num = event.block_num;
+            if let Some(i) = last_included {
+                let blocks = block_num.saturating_sub(i);
+                backing_times.push(InclusionPlottingPoint { block_num, blocks });
+            }
+            last_backed = Some(block_num);
+        }
+    }
+
+    std::fs::create_dir_all("out")?;
+
+    for (data, name) in [(backing_times, "backing"), (inclusion_times, "inclusion")] {
+        if data.is_empty() {
+            eprintln!("No {name} events found for {para_id}");
+            continue;
+        }
+        let csv_file = format!("out/{up_to_block}-{name}-{para_id}.csv");
+        let mut wrt = csv::Writer::from_path(&csv_file)?;
+        for p in data.iter().copied() {
+            wrt.serialize(p)?;
+        }
+        wrt.flush()?;
+        eprintln!("Saved the data to {csv_file}");
+    }
+    Ok(())
+}
+
+async fn handle_disputes(
+    network: String,
+    num_events: usize,
+    up_to_block: u32,
+    rpc_url: String,
+) -> anyhow::Result<()> {
+    let events = subscan::fetch_disputes_events(&network, up_to_block, num_events).await?;
+    let initiators = subscan::fetch_dispute_initiators(&network, events).await?;
+    let input = initiators.iter().map(|i| {
+        (
+            i.session_index.clone(),
+            FromStr::from_str(&i.block_hash).expect("valid block_hash"),
+        )
+    });
+    let account_map = subxt::historical_account_keys(rpc_url, input).await?;
+
+    let initiators = initiators.into_iter().map(|i| DisputeInitiator {
+        session_index: i.session_index,
+        // TODO: handle missing keys
+        account_id: account_map[&i.session_index][i.validator_index as usize].clone(),
+    });
+
+    std::fs::create_dir_all("out")?;
+
+    let csv_file = format!("out/disputes-{network}-{up_to_block}.csv");
+    let mut wrt = csv::Writer::from_path(&csv_file)?;
+    for i in initiators.into_iter() {
+        wrt.serialize(i)?;
+    }
+    wrt.flush()?;
+    eprintln!("Saved the data to {csv_file}");
+    Ok(())
+}
+
+async fn handle_validate_candidate(
+    network: String,
+    rpc_url: String,
+    candidate_hash: H256,
+    cache: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    let default_cache = PathBuf::from(".cache");
+    let cache = cache.unwrap_or(default_cache);
+    let _ = std::fs::create_dir_all(cache.as_path());
+
+    let povs_path = cache.as_path().join("povs");
+    let _ = std::fs::create_dir_all(&povs_path);
+
+    let pvfs_path = cache.as_path().join("pvfs");
+    let _ = std::fs::create_dir_all(&pvfs_path);
+
+    let (pov, receipt) =
+        povs_today::get_or_fetch_candidate(povs_path, &candidate_hash, &network).await?;
+
+    let code_hash = receipt.descriptor.validation_code_hash;
+    let relay_parent = receipt.descriptor.relay_parent;
+
+    let pvf = subxt::validation_code_by_hash(pvfs_path.as_path(), rpc_url, code_hash, relay_parent)
+        .await?;
+
+    let path = pvfs_path.as_path().join("compiled");
+    candidate_validation::validate_candidate(path, pov, pvf).await
+}
+
+fn main() -> anyhow::Result<()> {
+    let rt = tokio::runtime::Runtime::new()?;
     let cli = Cli::parse();
 
     match cli.commands {
@@ -145,121 +269,37 @@ async fn main() -> anyhow::Result<()> {
             para_id,
             up_to_block,
             num_events,
-        } => {
-            let events =
-                subscan::fetch_inclusion_events(&network, up_to_block, para_id, num_events).await?;
-
-            let mut last_backed = None;
-            let mut last_included = None;
-            let mut backing_times = Vec::new();
-            let mut inclusion_times = Vec::new();
-
-            for event in events.into_iter().filter(|e| e.para_id == para_id) {
-                if event.included {
-                    let block_num = event.block_num;
-                    if let Some(b) = last_backed {
-                        let blocks = block_num.saturating_sub(b);
-                        inclusion_times.push(InclusionPlottingPoint { block_num, blocks });
-                    }
-                    last_included = Some(block_num);
-                } else {
-                    let block_num = event.block_num;
-                    if let Some(i) = last_included {
-                        let blocks = block_num.saturating_sub(i);
-                        backing_times.push(InclusionPlottingPoint { block_num, blocks });
-                    }
-                    last_backed = Some(block_num);
-                }
-            }
-
-            std::fs::create_dir_all("out")?;
-
-            for (data, name) in [(backing_times, "backing"), (inclusion_times, "inclusion")] {
-                if data.is_empty() {
-                    eprintln!("No {name} events found for {para_id}");
-                    continue;
-                }
-                let csv_file = format!("out/{up_to_block}-{name}-{para_id}.csv");
-                let mut wrt = csv::Writer::from_path(&csv_file)?;
-                for p in data.iter().copied() {
-                    wrt.serialize(p)?;
-                }
-                wrt.flush()?;
-                eprintln!("Saved the data to {csv_file}");
-            }
-        }
+        } => rt.block_on(handle_inclusion(network, para_id, up_to_block, num_events)),
         Commands::Disputes {
             network,
             num_events,
             up_to_block,
             rpc_url,
-        } => {
-            let events = subscan::fetch_disputes_events(&network, up_to_block, num_events).await?;
-            let initiators = subscan::fetch_dispute_initiators(&network, events).await?;
-            let input = initiators.iter().map(|i| {
-                (
-                    i.session_index.clone(),
-                    FromStr::from_str(&i.block_hash).expect("valid block_hash"),
-                )
-            });
-            let account_map = subxt::historical_account_keys(rpc_url, input).await?;
-
-            let initiators = initiators.into_iter().map(|i| DisputeInitiator {
-                session_index: i.session_index,
-                // TODO: handle missing keys
-                account_id: account_map[&i.session_index][i.validator_index as usize].clone(),
-            });
-
-            std::fs::create_dir_all("out")?;
-
-            let csv_file = format!("out/disputes-{network}-{up_to_block}.csv");
-            let mut wrt = csv::Writer::from_path(&csv_file)?;
-            for i in initiators.into_iter() {
-                wrt.serialize(i)?;
-            }
-            wrt.flush()?;
-            eprintln!("Saved the data to {csv_file}");
-        }
+        } => rt.block_on(handle_disputes(network, num_events, up_to_block, rpc_url)),
         Commands::ValidateCandidate {
             network,
             rpc_url,
             candidate_hash,
             cache,
-        } => {
-            let default_cache = PathBuf::from(".cache");
-            let cache = cache.unwrap_or(default_cache);
-            let _ = std::fs::create_dir_all(cache.as_path());
-
-            let povs_path = cache.as_path().join("povs");
-            let _ = std::fs::create_dir_all(&povs_path);
-
-            let pvfs_path = cache.as_path().join("pvfs");
-            let _ = std::fs::create_dir_all(&pvfs_path);
-
-            let (pov, receipt) =
-                povs_today::get_or_fetch_candidate(povs_path, &candidate_hash, &network).await?;
-
-            let code_hash = receipt.descriptor.validation_code_hash;
-            let relay_parent = receipt.descriptor.relay_parent;
-
-            let pvf = subxt::validation_code_by_hash(
-                pvfs_path.as_path(),
-                rpc_url,
-                code_hash,
-                relay_parent,
-            )
-            .await?;
-
-            let path = pvfs_path.as_path().join("compiled");
-            candidate_validation::validate_candidate(path, pov, pvf).await?;
+        } => rt.block_on(handle_validate_candidate(
+            network,
+            rpc_url,
+            candidate_hash,
+            cache,
+        )),
+        Commands::PvfPrepareWorker(params) => {
+            polkadot_node_core_pvf_worker::prepare_worker_entrypoint(
+                &params.socket_path,
+                Some(&params.node_impl_version),
+            );
+            Ok(())
         }
-        Commands::PvfPrepareWorker { socket_path } => {
-            polkadot_node_core_pvf::prepare_worker_entrypoint(&socket_path);
-        }
-        Commands::PvfExecuteWorker { socket_path } => {
-            polkadot_node_core_pvf::execute_worker_entrypoint(&socket_path);
+        Commands::PvfExecuteWorker(params) => {
+            polkadot_node_core_pvf_worker::execute_worker_entrypoint(
+                &params.socket_path,
+                Some(&params.node_impl_version),
+            );
+            Ok(())
         }
     }
-
-    Ok(())
 }

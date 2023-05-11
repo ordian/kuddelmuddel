@@ -6,19 +6,20 @@ publish = false # never!
 
 [dependencies]
 anyhow = "1.0.53"
-clap = { version = "3.0.14", features = ["derive"] }
+clap = { version = "4.2.7", features = ["derive"] }
 csv = "1.1.6"
 futures = "0.3.24"
-indicatif = "0.16.2"
+indicatif = "0.17.3"
 parity-scale-codec = "3.1.5"
 reqwest = { version = "0.11.9", features = ["json"] }
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = "1.0.82"
-subxt = "0.22.0"
+subxt = "0.28.0"
 tokio = { version = "1", features = ["full", "rt-multi-thread"] }
 
 polkadot-node-primitives = { git = "https://github.com/paritytech/polkadot" }
 polkadot-node-core-pvf = { git = "https://github.com/paritytech/polkadot" }
+polkadot-node-core-pvf-worker = { git = "https://github.com/paritytech/polkadot" }
 polkadot-parachain = { git = "https://github.com/paritytech/polkadot" }
 
 sp-maybe-compressed-blob = { git = "https://github.com/paritytech/substrate" }
