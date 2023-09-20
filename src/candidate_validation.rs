@@ -2,7 +2,7 @@ use crate::primitives::{AvailableData, BlockData, ValidationCode, ValidationPara
 use futures::channel::oneshot;
 use futures::future::FutureExt;
 use parity_scale_codec::Encode as _;
-use polkadot_node_core_pvf::{Config, PvfPrepData};
+use polkadot_node_core_pvf::{Config, PrepareJobKind, PvfPrepData};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -15,10 +15,18 @@ pub async fn validate_candidate(
     pvfs_path: PathBuf,
     pov: AvailableData,
     pvf: ValidationCode,
+    node_version: String,
 ) -> anyhow::Result<()> {
     let program_path = std::env::current_exe()?;
-    let (mut validation_host, worker) =
-        polkadot_node_core_pvf::start(Config::new(pvfs_path, program_path), Default::default());
+    let (mut validation_host, worker) = polkadot_node_core_pvf::start(
+        Config::new(
+            pvfs_path,
+            Some(node_version),
+            program_path.clone(),
+            program_path,
+        ),
+        Default::default(),
+    );
 
     let raw_block_data =
         sp_maybe_compressed_blob::decompress(&pov.pov.block_data.0, 20 * 1024 * 1024)?.to_vec();
@@ -45,6 +53,7 @@ pub async fn validate_candidate(
             raw_validation_code,
             Default::default(),
             Duration::from_secs(60),
+            PrepareJobKind::Prechecking,
         );
         {
             let (tx, rx) = oneshot::channel();

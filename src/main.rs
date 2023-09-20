@@ -10,6 +10,13 @@ mod primitives;
 mod subscan;
 mod subxt;
 
+// The current version, including the latest commit hash.
+//
+// We probably don't need the node/worker version check for this project, but it also doesn't hurt.
+// The same kuddelmuddel binary provides both the node and the workers. The only use case for the
+// version check is if the binary gets replaced while the node is running.
+const NODE_VERSION: &'static str = env!("SUBSTRATE_CLI_IMPL_VERSION");
+
 #[derive(Parser)]
 #[clap(version)]
 struct Cli {
@@ -256,7 +263,7 @@ async fn handle_validate_candidate(
         .await?;
 
     let path = pvfs_path.as_path().join("compiled");
-    candidate_validation::validate_candidate(path, pov, pvf).await
+    candidate_validation::validate_candidate(path, pov, pvf, NODE_VERSION.into()).await
 }
 
 fn main() -> anyhow::Result<()> {
@@ -288,16 +295,18 @@ fn main() -> anyhow::Result<()> {
             cache,
         )),
         Commands::PvfPrepareWorker(params) => {
-            polkadot_node_core_pvf_worker::prepare_worker_entrypoint(
+            polkadot_node_core_pvf_prepare_worker::worker_entrypoint(
                 &params.socket_path,
                 Some(&params.node_impl_version),
+                Some(NODE_VERSION.into()),
             );
             Ok(())
         }
         Commands::PvfExecuteWorker(params) => {
-            polkadot_node_core_pvf_worker::execute_worker_entrypoint(
+            polkadot_node_core_pvf_execute_worker::worker_entrypoint(
                 &params.socket_path,
                 Some(&params.node_impl_version),
+                Some(NODE_VERSION.into()),
             );
             Ok(())
         }
