@@ -4,3 +4,4 @@ out/
 .vscode
 .cargo
 .cache
+.DS_Store
