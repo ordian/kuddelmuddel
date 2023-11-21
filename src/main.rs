@@ -129,6 +129,9 @@ pub struct ValidationWorkerCommand {
     /// The path to the validation host's socket.
     #[arg(long)]
     pub socket_path: String,
+    /// The path to the worker-specific temporary directory.
+    #[arg(long)]
+    pub worker_dir_path: String,
     /// Calling node implementation version
     #[arg(long)]
     pub node_impl_version: String,
@@ -269,6 +272,7 @@ async fn handle_validate_candidate(
 fn main() -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let cli = Cli::parse();
+    let security_status = Default::default();
 
     match cli.commands {
         Commands::Inclusion {
@@ -294,19 +298,24 @@ fn main() -> anyhow::Result<()> {
             candidate_hash,
             cache,
         )),
+        // TODO: Build separate workers. See github.com/paritytech/pvf-checker.
         Commands::PvfPrepareWorker(params) => {
             polkadot_node_core_pvf_prepare_worker::worker_entrypoint(
-                &params.socket_path,
+                params.socket_path.into(),
+                params.worker_dir_path.into(),
                 Some(&params.node_impl_version),
                 Some(NODE_VERSION.into()),
+                security_status,
             );
             Ok(())
         }
         Commands::PvfExecuteWorker(params) => {
             polkadot_node_core_pvf_execute_worker::worker_entrypoint(
-                &params.socket_path,
+                params.socket_path.into(),
+                params.worker_dir_path.into(),
                 Some(&params.node_impl_version),
                 Some(NODE_VERSION.into()),
+                security_status,
             );
             Ok(())
         }

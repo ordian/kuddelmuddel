@@ -26,7 +26,8 @@ pub async fn validate_candidate(
             program_path,
         ),
         Default::default(),
-    );
+    )
+    .await?;
 
     let raw_block_data =
         sp_maybe_compressed_blob::decompress(&pov.pov.block_data.0, 20 * 1024 * 1024)?.to_vec();
