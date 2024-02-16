@@ -34,8 +34,9 @@ pub async fn get_or_fetch_candidate(
     // fetch available data and receipt from povs.today
     let candidate = format!("{candidate_hash:?}");
     let prefix = &candidate[2..4];
-    let pov_url = format!("http://povs.today/{network}/{prefix}/{candidate}");
-    let receipt_url = format!("http://povs.today/{network}/{prefix}/receipts/{candidate}");
+    let pov_url = format!("https://pov.data.paritytech.io/{network}/{prefix}/{candidate}");
+    let receipt_url =
+        format!("https://pov.data.paritytech.io/{network}/{prefix}/receipts/{candidate}");
     let client = reqwest::Client::new();
 
     let pov_req = client.get(&pov_url).send().await?;

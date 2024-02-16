@@ -54,7 +54,7 @@ enum Commands {
     ///
     /// Example:
     /// ```bash
-    /// cargo run -- disputes --network kusama --from-block 11324714 --num-events 200 \
+    /// cargo run -- disputes --network kusama --up-to-block 11324714 --num-events 200 \
     ///  --rpc-url "wss://kusama-rpc.polkadot.io:443"
     /// ```
     Disputes {
